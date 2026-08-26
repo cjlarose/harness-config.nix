@@ -17,11 +17,18 @@ and only those:
   them), so they would be harmless as session variables; the wrapper keeps them
   anyway, so all of claude's environment stays scoped to `claude` and lives in
   one place.
+- **`lib.wrapOpencode`** — the same `package -> package` shape for opencode,
+  setting its Claude Code compatibility gates. opencode silently falls back to
+  Claude's prompt files and `~/.claude/skills` when no opencode-native file is
+  present; on a host that runs both agents deliberately that is a leak, and
+  these are the environment variables that switch it off. `home.sessionVariables`
+  would disable the fallback for *every* process, so the scoping needs a wrapper.
+  Serves opencode v1 and the v2 beta (`opencode2`) via `binName`.
 - **`lib.mkSuperpowersPlugin`** — builds [obra/superpowers][sp] into a
   force-loadable Claude Code plugin, with optional customizations applied on top
   of upstream's source.
 
-Both are exposed as pure `lib` functions that take the consumer's own `pkgs` as
+These are exposed as pure `lib` functions that take the consumer's own `pkgs` as
 an argument. This flake never builds `claude-code` (or opencode) itself, so
 `allowUnfree` and the nixpkgs channel stay entirely the consumer's; the consumer
 applies these functions in their own home-manager config.
@@ -110,6 +117,47 @@ programs.claude-code.package = harnessConfig.lib.wrapClaudeCode {
 };
 ```
 
+### `lib.wrapOpencode`
+
+Returns an opencode package with a thin `writeShellScriptBin` wrapper that sets
+opencode's [Claude Code compatibility][occ] gates before `exec`-ing the real
+binary. If no toggle is requested, it returns the input `package`
+**unchanged** — no wrapper enters the `PATH`.
+
+opencode, with no opencode-native file present, falls back to reading the
+project `CLAUDE.md` (when there is no `AGENTS.md`), `~/.claude/CLAUDE.md` (when
+there is no `~/.config/opencode/AGENTS.md`), and `~/.claude/skills`
+unconditionally. Each half of that fallback is gated by an environment variable.
+
+| Argument | Type | Default | Description |
+| --- | --- | --- | --- |
+| `pkgs` | package set (nixpkgs instance) | **required** | The consumer's `pkgs`. Used for `lib` and `writeShellScriptBin`; keeps `allowUnfree` and the channel the consumer's. |
+| `package` | package (a derivation) | **required** | The opencode package to wrap (the consumer's `pkgs.opencode` for v1, or a self-built `opencode2` for the v2 beta). |
+| `binName` | str | `"opencode"` | The binary to expose. `"opencode"` for v1, `"opencode2"` for the v2 beta, so a host can wrap and install both side by side. |
+| `disableClaudeCompat` | bool | `false` | Disable Claude Code compatibility wholesale (`OPENCODE_DISABLE_CLAUDE_CODE=1`): neither Claude's prompt files nor skills are read. Subsumes the two toggles below. |
+| `disableClaudePrompt` | bool | `false` | Disable only the Claude prompt fallback (`OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1`) — `CLAUDE.md` project and global files; skills are still read. A v1 concern (v2 discovers `AGENTS.md` only), inert but harmless on v2. |
+| `disableClaudeSkills` | bool | `false` | Disable only the `~/.claude/skills` fallback (`OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`); Claude's prompt files are still read. Applies to both v1 and v2. |
+
+**Returns:** the input `package` untouched when every toggle is off; otherwise a
+`writeShellScriptBin binName` wrapper that sets the requested variables and
+`exec`s `${package}/bin/${binName} "$@"`.
+
+Each exported variable uses `:-` default semantics, so a value present in the
+session's environment wins — e.g. `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=0` remains
+a per-session escape hatch.
+
+```nix
+# Run opencode without reading Claude's global prompt or skills:
+programs.opencode.package = harnessConfig.lib.wrapOpencode {
+  inherit pkgs;
+  package = pkgs.opencode;
+  disableClaudePrompt = true;
+  disableClaudeSkills = true;
+};
+```
+
+[occ]: https://opencode.ai/docs/rules/#claude-code-compatibility
+
 ### `lib.mkSuperpowersPlugin`
 
 Builds [obra/superpowers][sp] into a Claude Code plugin. Upstream already ships
@@ -162,15 +210,16 @@ programs.opencode.settings.skills.paths =
 
 ## Flake outputs
 
-- **`lib`** — the two system-independent functions above: `wrapClaudeCode` and
-  `mkSuperpowersPlugin`. They take the consumer's `pkgs` as an argument, so they
-  live under `lib` rather than `packages.${system}`.
+- **`lib`** — the three system-independent functions above: `wrapClaudeCode`,
+  `wrapOpencode`, and `mkSuperpowersPlugin`. They take the consumer's `pkgs` as an
+  argument, so they live under `lib` rather than `packages.${system}`.
 - **`packages.${system}`** — a scaffold for later tasks. **Currently empty**:
   `claude-code`/opencode come from the consumer's `pkgs`, and no self-built tool
   package exists yet.
-- **`checks.${system}`** — the flake-check tests for the two `lib` functions
-  (from `tests/wrap-claude-code.nix` and `tests/superpowers.nix`), covering the
-  identity/selective/full wrapper behavior and the superpowers structure, baked
+- **`checks.${system}`** — the flake-check tests for the `lib` functions (from
+  `tests/wrap-claude-code.nix`, `tests/wrap-opencode.nix`, and
+  `tests/superpowers.nix`), covering the identity/selective/full wrapper behavior
+  of both wrappers, the `binName` rename, and the superpowers structure, baked
   hooks, `disableHooks`, and `disableSpecCommits` customizations.
 
 Supported platforms: `aarch64-darwin`, `aarch64-linux`, `x86_64-linux`.
