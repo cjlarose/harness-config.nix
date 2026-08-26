@@ -31,6 +31,12 @@
         # packages.${system}. See lib/wrap-claude-code.nix.
         wrapClaudeCode = import ./lib/wrap-claude-code.nix;
 
+        # The opencode environment wrapper. Same shape as wrapClaudeCode: takes
+        # the consumer's pkgs and package, sets opencode's Claude Code
+        # compatibility gates before exec. Serves opencode v1 and the v2 beta
+        # via `binName`. See lib/wrap-opencode.nix.
+        wrapOpencode = import ./lib/wrap-opencode.nix;
+
         # Builds obra/superpowers into a Claude Code plugin. Closes over the
         # pinned superpowers source; the consumer passes pkgs and may override
         # the customizations (and src). See lib/superpowers.nix.
@@ -48,6 +54,10 @@
         import ./tests/wrap-claude-code.nix {
           inherit pkgs;
           inherit (self.lib) wrapClaudeCode;
+        }
+        // import ./tests/wrap-opencode.nix {
+          inherit pkgs;
+          inherit (self.lib) wrapOpencode;
         }
         // import ./tests/superpowers.nix {
           inherit pkgs;
