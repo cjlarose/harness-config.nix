@@ -13,9 +13,16 @@
       url = "github:obra/superpowers/v6.2.0";
       flake = false;
     };
+
+    # lavish-axi, pinned to a release tag. Consumed as a source (flake = false);
+    # lib.mkLavishAxi builds it.
+    lavish-axi = {
+      url = "github:kunchenguid/lavish-axi/lavish-axi-v0.1.43";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, superpowers }:
+  outputs = { self, nixpkgs, superpowers, lavish-axi }:
     let
       supportedPlatforms = [
         "aarch64-darwin"
@@ -42,19 +49,25 @@
         # the customizations (and src). See lib/superpowers.nix.
         mkSuperpowersPlugin = args:
           import ./lib/superpowers.nix ({ src = superpowers; } // args);
-      };
 
-      # Scaffold for later tasks. Empty for now: claude-code/opencode come from
-      # the consumer's pkgs, and no self-built tool package exists yet.
-      packages = forAllPlatforms (system: { });
+        # Builds Lavish AXI as a derivation. Same shape as the other lib
+        # helpers: takes the consumer's pkgs, so it builds with their platform
+        # and channel. Closes over the pinned lavish-axi source and version; the
+        # consumer may override src, version, and enableProxySupport. See
+        # lib/lavish-axi.nix.
+        mkLavishAxi = args:
+          import ./lib/lavish-axi.nix
+            ({ src = lavish-axi; version = "0.1.43"; } // args);
+      };
 
       checks = forAllPlatforms (system:
         let pkgs = nixpkgs.legacyPackages.${system};
         in
-        import ./tests/wrap-claude-code.nix {
-          inherit pkgs;
-          inherit (self.lib) wrapClaudeCode;
-        }
+        import ./tests/wrap-claude-code.nix
+          {
+            inherit pkgs;
+            inherit (self.lib) wrapClaudeCode;
+          }
         // import ./tests/wrap-opencode.nix {
           inherit pkgs;
           inherit (self.lib) wrapOpencode;
@@ -62,6 +75,10 @@
         // import ./tests/superpowers.nix {
           inherit pkgs;
           inherit (self.lib) mkSuperpowersPlugin;
+        }
+        // import ./tests/lavish-axi.nix {
+          inherit pkgs;
+          mkLavishAxi = self.lib.mkLavishAxi;
         });
     };
 }
