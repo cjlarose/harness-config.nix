@@ -5,6 +5,11 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
+    home-manager = {
+      url = "github:nix-community/home-manager/release-26.05";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # obra/superpowers, pinned to a release tag rather than a branch: it ships a
     # SessionStart hook that injects context into every session, so an unpinned
     # bump would change every consumer's prompt with no lock diff to show for it.
@@ -22,7 +27,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, superpowers, lavish-axi }:
+  outputs = { self, nixpkgs, home-manager, superpowers, lavish-axi }:
     let
       supportedPlatforms = [
         "aarch64-darwin"
@@ -60,6 +65,13 @@
             ({ src = lavish-axi; version = "0.1.43"; } // args);
       };
 
+      homeManagerModules = rec {
+        lavish = {
+          imports = [ (import ./home-manager-modules/lavish.nix { inherit self; }) ];
+        };
+        default = lavish;
+      };
+
       checks = forAllPlatforms (system:
         let pkgs = nixpkgs.legacyPackages.${system};
         in
@@ -79,6 +91,14 @@
         // import ./tests/lavish-axi.nix {
           inherit pkgs;
           mkLavishAxi = self.lib.mkLavishAxi;
+        }
+        // import ./tests/lavish-module.nix {
+          inherit pkgs home-manager;
+          lavishModule = self.homeManagerModules.lavish;
+          lavishPackage = self.lib.mkLavishAxi {
+            inherit pkgs;
+            enableProxySupport = true;
+          };
         });
     };
 }
