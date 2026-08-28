@@ -1,7 +1,8 @@
 # harness-config.nix
 
 Reusable Claude Code / agent tooling for [home-manager][hm], packaged as a Nix
-flake.
+flake. It provides package transformations and plugins for existing agents, a
+Lavish AXI build function, and a home-manager module for it.
 
 Claude Code itself is left entirely to the stock `programs.claude-code`
 home-manager module: it already covers the package, settings, MCP servers,
@@ -27,14 +28,24 @@ and only those:
 - **`lib.mkSuperpowersPlugin`** — builds [obra/superpowers][sp] into a
   force-loadable Claude Code plugin, with optional customizations applied on top
   of upstream's source.
+- **`lib.mkLavishAxi`** — builds a pinned Lavish AXI release on the consumer's
+  own `pkgs`, with opt-in reverse-proxy support (`enableProxySupport = true`)
+  and the agent skill packaged for declarative registration.
+- **`homeManagerModules.lavish`** — installs and configures Lavish AXI, can
+  opt out of telemetry via a `programs.lavish.disableTelemetry` flag, and can
+  register the packaged skill with Claude Code, OpenCode, or both.
+  `homeManagerModules.default` is an alias for the same module.
 
-These are exposed as pure `lib` functions that take the consumer's own `pkgs` as
-an argument. This flake never builds `claude-code` (or opencode) itself, so
-`allowUnfree` and the nixpkgs channel stay entirely the consumer's; the consumer
-applies these functions in their own home-manager config.
+The `lib` helpers are pure functions that take the consumer's own `pkgs` as an
+argument. This flake ships no packages itself: `claude-code` and opencode come
+from the consumer's channel, and `mkLavishAxi` builds lavish on demand with the
+consumer's `pkgs`. So `allowUnfree` and the nixpkgs channel stay entirely the
+consumer's; the consumer applies these functions in their own home-manager
+config.
 
 [hm]: https://github.com/nix-community/home-manager
 [sp]: https://github.com/obra/superpowers
+[lavish]: https://github.com/kunchenguid/lavish-axi
 
 ## Getting started
 
@@ -208,24 +219,91 @@ programs.opencode.settings.skills.paths =
   [ "${harnessConfig.lib.mkSuperpowersPlugin { inherit pkgs; }}/skills" ];
 ```
 
+### `lib.mkLavishAxi`
+
+Builds a Lavish AXI release from a source pin and a fixed pnpm dependency
+closure, on the consumer's own `pkgs`. The output exposes the `lavish-axi`
+executable and installs the upstream skill at
+`share/lavish-axi/skill/SKILL.md`.
+
+| Argument | Type | Default | Description |
+| --- | --- | --- | --- |
+| `pkgs` | package set (nixpkgs instance) | **required** | The consumer's `pkgs`. |
+| `src` | path / source | the flake's pinned `lavish-axi` input (`lavish-axi-v0.1.43`) | Upstream's source tree. Override to pin your own revision; pass a matching `version`. |
+| `version` | str | `"0.1.43"` | The release being built. Override to match a new pin. |
+| `enableProxySupport` | bool | `false` | Enable Express proxy trust so forwarded request metadata works behind a reverse proxy, and recognize `LAVISH_AXI_LINK_SCHEME` / `LAVISH_AXI_LINK_PORT` in generated links — an HTTPS public URL with a different or omitted public port while the service listens locally over HTTP. |
+
+**Returns:** the packaged `lavish-axi` derivation. The packaged skill always
+invokes that executable directly rather than through `npx`, so using the skill
+does not download or run a different Lavish release at runtime.
+
+```nix
+programs.lavish.package = harnessConfig.lib.mkLavishAxi {
+  inherit pkgs;
+  enableProxySupport = true;
+};
+```
+
+### `homeManagerModules.lavish`
+
+The module is also exported as `homeManagerModules.default`. Import either name,
+then enable and configure `programs.lavish`:
+
+```nix
+{
+  imports = [ inputs.harness-config.homeManagerModules.lavish ];
+  programs.lavish = {
+    enable = true;
+    disableTelemetry = true;
+    host = "127.0.0.1";
+    linkHost = "lavish.example.org";
+    linkScheme = "https";
+    linkPort = "";
+    allowedHosts = [ "lavish.example.org" ];
+    port = 4385;
+  };
+}
+```
+
+The `package` option defaults to this flake's pinned release built with
+`enableProxySupport = true`; override it to use another Lavish build. Skill
+registration expects the package to provide `share/lavish-axi/skill/SKILL.md`.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `programs.lavish.enable` | bool | `false` | Install and configure Lavish AXI. When disabled, the module adds no package, variables, or skills. |
+| `programs.lavish.package` | package | `harnessConfig.lib.mkLavishAxi { inherit pkgs; enableProxySupport = true; }` — this flake's pinned release with proxy support | Package to install. Override this to use another Lavish build. |
+| `programs.lavish.disableTelemetry` | bool | `false` | Set `LAVISH_AXI_TELEMETRY=0` in `home.sessionVariables`, opting out of Lavish's telemetry. |
+| `programs.lavish.host` | null or string | `null` | Set `LAVISH_AXI_HOST`, typically to the local listening address. |
+| `programs.lavish.linkHost` | null or string | `null` | Set `LAVISH_AXI_LINK_HOST`, the host used in generated public links. |
+| `programs.lavish.linkScheme` | `"http"`, `"https"`, or null | `null` | Set `LAVISH_AXI_LINK_SCHEME` for generated links. |
+| `programs.lavish.linkPort` | string or null | `null` | Set `LAVISH_AXI_LINK_PORT` for generated links. Use `""` to omit the port entirely. |
+| `programs.lavish.allowedHosts` | list of strings | `[ ]` | Set `LAVISH_AXI_ALLOWED_HOSTS`. Multiple hosts are joined into one space-separated value. |
+| `programs.lavish.port` | port or null | `null` | Set `LAVISH_AXI_PORT`, converted to a string in the session environment. |
+| `programs.lavish.claudeCodeSkill.enable` | bool | `false` | Register the packaged `lavish` skill in `programs.claude-code.skills`. |
+| `programs.lavish.opencodeSkill.enable` | bool | `false` | Register the packaged `lavish` skill in `programs.opencode.skills`. |
+
 ## Flake outputs
 
-- **`lib`** — the three system-independent functions above: `wrapClaudeCode`,
-  `wrapOpencode`, and `mkSuperpowersPlugin`. They take the consumer's `pkgs` as an
-  argument, so they live under `lib` rather than `packages.${system}`.
-- **`packages.${system}`** — a scaffold for later tasks. **Currently empty**:
-  `claude-code`/opencode come from the consumer's `pkgs`, and no self-built tool
-  package exists yet.
-- **`checks.${system}`** — the flake-check tests for the `lib` functions (from
-  `tests/wrap-claude-code.nix`, `tests/wrap-opencode.nix`, and
-  `tests/superpowers.nix`), covering the identity/selective/full wrapper behavior
-  of both wrappers, the `binName` rename, and the superpowers structure, baked
-  hooks, `disableHooks`, and `disableSpecCommits` customizations.
+- **`lib`** — the four system-independent functions above: `wrapClaudeCode`,
+  `wrapOpencode`, `mkSuperpowersPlugin`, and `mkLavishAxi`. They take the
+  consumer's `pkgs` as an argument, so they live under `lib` rather than a
+  `packages.${system}` output.
+- **`homeManagerModules.lavish`** — the `programs.lavish` module described above.
+- **`homeManagerModules.default`** — an alias for `homeManagerModules.lavish`.
+- **`checks.${system}`** — flake-check tests for the four `lib` helpers, the
+  Lavish package build (defaults and the proxy knob) and the module's defaults,
+  telemetry option, environment, package override, and independent skill
+  registration.
+
+There is no `packages.${system}` output. Lavish ships through `lib.mkLavishAxi`;
+claude-code and opencode come from the consumer's own channel.
 
 Supported platforms: `aarch64-darwin`, `aarch64-linux`, `x86_64-linux`.
 
-Inputs: `nixpkgs` tracks `nixos-26.05`; `superpowers` is pinned to a release tag
-(`obra/superpowers` `v6.2.0`) and consumed as a source (`flake = false`), because
-it ships a `SessionStart` hook that injects context into every session — an
-unpinned bump would change every consumer's prompt with no lock diff to show for
-it.
+Inputs: `nixpkgs` tracks `nixos-26.05`; `home-manager` tracks `release-26.05`;
+`superpowers` is pinned to a release tag (`obra/superpowers` `v6.2.0`) and
+consumed as a source (`flake = false`), because it ships a `SessionStart` hook
+that injects context into every session — an unpinned bump would change every
+consumer's prompt with no lock diff to show for it; `lavish-axi` is likewise
+pinned to a release tag (`lavish-axi-v0.1.43`) and consumed as a source.
