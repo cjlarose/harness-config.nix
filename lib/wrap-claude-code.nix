@@ -26,6 +26,7 @@
 #     fullscreenTui = true;
 #     toolShell = "${pkgs.bashInteractive}/bin/bash";
 #     agentTeams = true;
+#     disableAutoMemory = true;
 #   };
 #
 # home-manager wraps this package again with its own --plugin-dir flags, so the
@@ -46,13 +47,15 @@
   toolShell ? null,
   # Enable the experimental subagent-teams capability.
   agentTeams ? false,
+  # Disable Claude Code's automatic memory.
+  disableAutoMemory ? false,
 }:
 
 let
   inherit (pkgs) lib;
 
   # An unpatched call returns the package untouched -- no wrapper in the PATH.
-  patched = trueColorInTmux || fullscreenTui || toolShell != null || agentTeams;
+  patched = trueColorInTmux || fullscreenTui || toolShell != null || agentTeams || disableAutoMemory;
 
   wrapped = pkgs.writeShellScriptBin "claude" ''
     ${lib.optionalString trueColorInTmux ''
@@ -81,6 +84,11 @@ let
       # The experimental subagent-teams gate. The :- default keeps an explicit
       # CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0 working as a per-session opt-out.
       export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS="''${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}"
+    ''}
+    ${lib.optionalString disableAutoMemory ''
+      # Disable Claude Code's automatic memory; an explicit 0 re-enables it for
+      # one invocation.
+      export CLAUDE_CODE_DISABLE_AUTO_MEMORY="''${CLAUDE_CODE_DISABLE_AUTO_MEMORY:-1}"
     ''}
     exec ${package}/bin/claude "$@"
   '';
