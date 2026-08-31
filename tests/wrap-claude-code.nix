@@ -7,7 +7,9 @@
 let
   inherit (pkgs) lib;
 
-  stubClaude = pkgs.writeShellScriptBin "claude" "echo stub";
+  stubClaude = pkgs.writeShellScriptBin "claude" ''
+    printf '%s\n' "$CLAUDE_CODE_DISABLE_AUTO_MEMORY"
+  '';
 
   # bin/claude of a wrapped result, for content assertions.
   scriptOf = args:
@@ -37,6 +39,17 @@ in
     absent  'CLAUDE_CODE_NO_FLICKER'   # fullscreenTui not requested
     absent  'CLAUDE_CODE_SHELL'        # toolShell not requested
     absent  'CLAUDE_CODE_DISABLE_AUTO_MEMORY'
+    touch $out
+  '';
+
+  # An invocation-level check: an explicit 0 must override the wrapper default.
+  wrap-auto-memory-override = pkgs.runCommand "wrap-auto-memory-override"
+    { script = scriptOf { disableAutoMemory = true; }; } ''
+    actual="$(CLAUDE_CODE_DISABLE_AUTO_MEMORY=0 "$script")"
+    test "$actual" = 0 || {
+      echo "expected CLAUDE_CODE_DISABLE_AUTO_MEMORY=0, got: $actual"
+      exit 1
+    }
     touch $out
   '';
 
