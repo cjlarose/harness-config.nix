@@ -36,6 +36,7 @@ in
     present 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'
     absent  'CLAUDE_CODE_NO_FLICKER'   # fullscreenTui not requested
     absent  'CLAUDE_CODE_SHELL'        # toolShell not requested
+    absent  'CLAUDE_CODE_DISABLE_AUTO_MEMORY'
     touch $out
   '';
 
@@ -47,11 +48,13 @@ in
         fullscreenTui = true;
         toolShell = "/run/current-system/sw/bin/bash";
         agentTeams = true;
+        disableAutoMemory = true;
       };
     } ''
     for needle in 'unset TMUX' 'CLAUDE_CODE_NO_FLICKER' \
-                  'CLAUDE_CODE_SHELL' '/run/current-system/sw/bin/bash' \
-                  'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS'; do
+                   'CLAUDE_CODE_SHELL' '/run/current-system/sw/bin/bash' \
+                   'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' \
+                   'CLAUDE_CODE_DISABLE_AUTO_MEMORY'; do
       grep -q -- "$needle" "$script" || { echo "missing: $needle"; exit 1; }
     done
     touch $out

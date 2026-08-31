@@ -71,6 +71,7 @@ say, `harnessConfig`):
     fullscreenTui = true;
     toolShell = "${pkgs.bashInteractive}/bin/bash";
     agentTeams = true;
+    disableAutoMemory = true;
   };
 
   # 2. Add the superpowers plugin (home-manager >= 26.05, where
@@ -106,6 +107,7 @@ the `PATH`.
 | `fullscreenTui` | bool | `false` | Opt into the fullscreen (alt-screen, flicker-free) TUI renderer by exporting `CLAUDE_CODE_NO_FLICKER=1`. |
 | `toolShell` | str (absolute path) or `null` | `null` | Absolute path to the shell `claude` runs its Bash tool under (exported as `CLAUDE_CODE_SHELL`), or `null` to leave it following `$SHELL`. |
 | `agentTeams` | bool | `false` | Enable the experimental subagent-teams capability by exporting `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. |
+| `disableAutoMemory` | bool | `false` | Disable Claude Code's automatic memory by exporting `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. |
 
 **Returns:** the input `package` untouched when every toggle is off/`null`;
 otherwise a `writeShellScriptBin "claude"` wrapper that sets the environment and
@@ -113,9 +115,10 @@ otherwise a `writeShellScriptBin "claude"` wrapper that sets the environment and
 
 Each exported variable uses `:-` default semantics, so a value present in the
 session's environment wins over the wrapper's — e.g. `CLAUDE_CODE_NO_FLICKER=0`,
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0`, or an explicit `CLAUDE_CODE_SHELL`
-remain per-session escape hatches. (`trueColorInTmux` is the exception: it
-`unset`s `$TMUX` outright, only within the `claude` process.)
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=0`,
+or an explicit `CLAUDE_CODE_SHELL` remain per-session escape hatches.
+(`trueColorInTmux` is the exception: it `unset`s `$TMUX` outright, only within
+the `claude` process.)
 
 ```nix
 programs.claude-code.package = harnessConfig.lib.wrapClaudeCode {
@@ -125,6 +128,7 @@ programs.claude-code.package = harnessConfig.lib.wrapClaudeCode {
   fullscreenTui = true;
   toolShell = "${pkgs.bashInteractive}/bin/bash";
   agentTeams = true;
+  disableAutoMemory = true;
 };
 ```
 
