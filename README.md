@@ -72,6 +72,7 @@ say, `harnessConfig`):
     toolShell = "${pkgs.bashInteractive}/bin/bash";
     agentTeams = true;
     disableAutoMemory = true;
+    disableAgentView = true;
   };
 
   # 2. Add the superpowers plugin (home-manager >= 26.05, where
@@ -108,6 +109,7 @@ the `PATH`.
 | `toolShell` | str (absolute path) or `null` | `null` | Absolute path to the shell `claude` runs its Bash tool under (exported as `CLAUDE_CODE_SHELL`), or `null` to leave it following `$SHELL`. |
 | `agentTeams` | bool | `false` | Enable the experimental subagent-teams capability by exporting `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. |
 | `disableAutoMemory` | bool | `false` | Disable Claude Code's automatic memory by exporting `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. |
+| `disableAgentView` | bool | `false` | Disable Claude Code's Agent view by exporting `CLAUDE_CODE_DISABLE_AGENT_VIEW=1`. |
 
 **Returns:** the input `package` untouched when every toggle is off/`null`;
 otherwise a `writeShellScriptBin "claude"` wrapper that sets the environment and
@@ -116,7 +118,8 @@ otherwise a `writeShellScriptBin "claude"` wrapper that sets the environment and
 Each exported variable uses `:-` default semantics, so a value present in the
 session's environment wins over the wrapper's — e.g. `CLAUDE_CODE_NO_FLICKER=0`,
 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=0`,
-or an explicit `CLAUDE_CODE_SHELL` remain per-session escape hatches.
+`CLAUDE_CODE_DISABLE_AGENT_VIEW=0`, or an explicit `CLAUDE_CODE_SHELL` remain
+per-session escape hatches.
 (`trueColorInTmux` is the exception: it `unset`s `$TMUX` outright, only within
 the `claude` process.)
 
@@ -129,6 +132,7 @@ programs.claude-code.package = harnessConfig.lib.wrapClaudeCode {
   toolShell = "${pkgs.bashInteractive}/bin/bash";
   agentTeams = true;
   disableAutoMemory = true;
+  disableAgentView = true;
 };
 ```
 

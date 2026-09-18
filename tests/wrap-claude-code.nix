@@ -11,6 +11,10 @@ let
     printf '%s\n' "$CLAUDE_CODE_DISABLE_AUTO_MEMORY"
   '';
 
+  agentViewStubClaude = pkgs.writeShellScriptBin "claude" ''
+    printf '%s\n' "$CLAUDE_CODE_DISABLE_AGENT_VIEW"
+  '';
+
   # bin/claude of a wrapped result, for content assertions.
   scriptOf = args:
     "${wrapClaudeCode ({ inherit pkgs; package = stubClaude; } // args)}/bin/claude";
@@ -39,6 +43,7 @@ in
     absent  'CLAUDE_CODE_NO_FLICKER'   # fullscreenTui not requested
     absent  'CLAUDE_CODE_SHELL'        # toolShell not requested
     absent  'CLAUDE_CODE_DISABLE_AUTO_MEMORY'
+    absent  'CLAUDE_CODE_DISABLE_AGENT_VIEW'
     touch $out
   '';
 
@@ -53,6 +58,40 @@ in
     touch $out
   '';
 
+  # An invocation-level opt-out must override the wrapper's agent-view default.
+  wrap-agent-view-override = pkgs.runCommand "wrap-agent-view-override"
+    {
+      script = "${wrapClaudeCode {
+        inherit pkgs;
+        package = agentViewStubClaude;
+        disableAgentView = true;
+      }}/bin/claude";
+    } ''
+    actual="$(CLAUDE_CODE_DISABLE_AGENT_VIEW=0 "$script")"
+    test "$actual" = 0 || {
+      echo "expected CLAUDE_CODE_DISABLE_AGENT_VIEW=0, got: $actual"
+      exit 1
+    }
+    touch $out
+  '';
+
+  # Enabling agent-view suppression defaults the variable to 1.
+  wrap-agent-view-default = pkgs.runCommand "wrap-agent-view-default"
+    {
+      script = "${wrapClaudeCode {
+        inherit pkgs;
+        package = agentViewStubClaude;
+        disableAgentView = true;
+      }}/bin/claude";
+    } ''
+    actual="$("$script")"
+    test "$actual" = 1 || {
+      echo "expected CLAUDE_CODE_DISABLE_AGENT_VIEW=1, got: $actual"
+      exit 1
+    }
+    touch $out
+  '';
+
   # toolShell interpolates the given path, and every toggle composes.
   wrap-all = pkgs.runCommand "wrap-all"
     {
@@ -62,12 +101,14 @@ in
         toolShell = "/run/current-system/sw/bin/bash";
         agentTeams = true;
         disableAutoMemory = true;
+        disableAgentView = true;
       };
     } ''
     for needle in 'unset TMUX' 'CLAUDE_CODE_NO_FLICKER' \
-                   'CLAUDE_CODE_SHELL' '/run/current-system/sw/bin/bash' \
-                   'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' \
-                   'CLAUDE_CODE_DISABLE_AUTO_MEMORY'; do
+                    'CLAUDE_CODE_SHELL' '/run/current-system/sw/bin/bash' \
+                    'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' \
+                    'CLAUDE_CODE_DISABLE_AUTO_MEMORY' \
+                    'CLAUDE_CODE_DISABLE_AGENT_VIEW'; do
       grep -q -- "$needle" "$script" || { echo "missing: $needle"; exit 1; }
     done
     touch $out
