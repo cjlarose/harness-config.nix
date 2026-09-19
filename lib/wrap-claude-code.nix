@@ -27,6 +27,7 @@
 #     toolShell = "${pkgs.bashInteractive}/bin/bash";
 #     agentTeams = true;
 #     disableAutoMemory = true;
+#     disableAgentView = true;
 #   };
 #
 # home-manager wraps this package again with its own --plugin-dir flags, so the
@@ -49,13 +50,15 @@
   agentTeams ? false,
   # Disable Claude Code's automatic memory.
   disableAutoMemory ? false,
+  # Disable Claude Code's Agent view.
+  disableAgentView ? false,
 }:
 
 let
   inherit (pkgs) lib;
 
   # An unpatched call returns the package untouched -- no wrapper in the PATH.
-  patched = trueColorInTmux || fullscreenTui || toolShell != null || agentTeams || disableAutoMemory;
+  patched = trueColorInTmux || fullscreenTui || toolShell != null || agentTeams || disableAutoMemory || disableAgentView;
 
   wrapped = pkgs.writeShellScriptBin "claude" ''
     ${lib.optionalString trueColorInTmux ''
@@ -89,6 +92,11 @@ let
       # Disable Claude Code's automatic memory; an explicit 0 re-enables it for
       # one invocation.
       export CLAUDE_CODE_DISABLE_AUTO_MEMORY="''${CLAUDE_CODE_DISABLE_AUTO_MEMORY:-1}"
+    ''}
+    ${lib.optionalString disableAgentView ''
+      # Disable Claude Code's Agent view; an explicit 0 re-enables it for one
+      # invocation.
+      export CLAUDE_CODE_DISABLE_AGENT_VIEW="''${CLAUDE_CODE_DISABLE_AGENT_VIEW:-1}"
     ''}
     exec ${package}/bin/claude "$@"
   '';
