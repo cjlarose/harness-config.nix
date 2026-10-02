@@ -12,6 +12,17 @@
 ,
 }:
 
+let
+  # The weak claim present verbatim in BOTH the workflow poll step and the
+  # Commands & rules bullet of the upstream skill. --replace-fail rewrites every
+  # occurrence and errors if it finds none, so one directive fixes both and a
+  # reworded upstream fails the build instead of shipping the old advice.
+  pollWeakClaim =
+    "If the poll gets killed or times out anyway, just re-run it - queued feedback is never lost.";
+
+  pollCorrectedClaim =
+    "If the poll is killed or times out *while waiting*, just re-run it — feedback that is queued but not yet delivered survives that. It does NOT survive a kill or a line-dropping filter landing *during* delivery: the server empties the session `prompts` as it hands them over, so annotations already handed off are destroyed, and re-polling then blocks for the next batch instead of returning them. Never pipe `lavish-axi poll` through `tail`/`head`/`grep`/`sed`/`awk`; `tee` its full output to a durable per-iteration file and read every byte. If a batch is lost this way, believe the human and ask them to resend. See the \"Poll feedback safety\" section at the end of this skill.";
+in
 stdenv.mkDerivation (finalAttrs: {
   pname = "lavish-axi";
   inherit version src;
@@ -61,6 +72,29 @@ stdenv.mkDerivation (finalAttrs: {
     # Invoke the packaged executable directly instead of downloading it with npx.
     substituteInPlace "$out/share/lavish-axi/skill/SKILL.md" \
       --replace-fail 'npx -y lavish-axi' 'lavish-axi'
+
+    # Harden the poll-feedback guidance. The upstream skill tells the agent a
+    # killed `poll` can always be re-run because "queued feedback is never lost"
+    # -- true only while it is WAITING. `poll` empties the session prompts as it
+    # hands them over, so a line-dropping filter after it, or a kill landing
+    # mid-delivery, destroys the user's annotations with no way to recover them.
+    # Rewrite that claim wherever it appears and append the full safety section.
+    # Like the npx rewrite above and lib/superpowers.nix, every edit is
+    # --replace-fail plus a tripwire, so an upstream rewording fails the build
+    # instead of silently shipping the old advice.
+    substituteInPlace "$out/share/lavish-axi/skill/SKILL.md" \
+      --replace-fail ${lib.escapeShellArg pollWeakClaim} ${lib.escapeShellArg pollCorrectedClaim}
+
+    if grep -Fq 'queued feedback is never lost' "$out/share/lavish-axi/skill/SKILL.md"; then
+      echo "the weak 'queued feedback is never lost' claim survived the rewrite" >&2
+      exit 1
+    fi
+
+    printf '\n' >> "$out/share/lavish-axi/skill/SKILL.md"
+    cat ${./poll-hardening.md} >> "$out/share/lavish-axi/skill/SKILL.md"
+
+    grep -Fq 'Poll feedback safety' "$out/share/lavish-axi/skill/SKILL.md" \
+      || { echo "poll-hardening section missing from skill" >&2; exit 1; }
 
     makeWrapper ${nodejs_26}/bin/node $out/bin/lavish-axi \
       --add-flags $out/lib/lavish-axi/dist/cli.mjs
