@@ -13,6 +13,15 @@
       exit 1
     fi
     grep -Fq 'lavish-axi' "$package/share/lavish-axi/skill/SKILL.md"
+
+    # The poll-feedback guidance is hardened: the weak "just re-run it" claim is
+    # rewritten everywhere it appeared, and the safety section is appended.
+    if grep -Fq 'queued feedback is never lost' "$package/share/lavish-axi/skill/SKILL.md"; then
+      echo "defaults skill still carries the weak poll-feedback claim" >&2
+      exit 1
+    fi
+    grep -Fq 'Poll feedback safety' "$package/share/lavish-axi/skill/SKILL.md"
+    grep -Fq 'never put a line-dropping filter after' "$package/share/lavish-axi/skill/SKILL.md"
     if grep -Fq 'trust proxy' "$package/lib/lavish-axi/dist/cli.mjs"; then
       echo "defaults build unexpectedly enables trust proxy" >&2
       exit 1

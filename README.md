@@ -30,7 +30,10 @@ and only those:
   of upstream's source.
 - **`lib.mkLavishAxi`** — builds a pinned Lavish AXI release on the consumer's
   own `pkgs`, with opt-in reverse-proxy support (`enableProxySupport = true`)
-  and the agent skill packaged for declarative registration.
+  and the agent skill packaged for declarative registration. The packaged skill
+  is patched for this build: it invokes the installed `lavish-axi` directly
+  instead of through `npx`, and its poll-feedback guidance is hardened so an
+  agent cannot destroy the user's annotations by filtering `lavish-axi poll`.
 - **`homeManagerModules.lavish`** — installs and configures Lavish AXI, can
   opt out of telemetry via a `programs.lavish.disableTelemetry` flag, and can
   register the packaged skill with Claude Code, OpenCode, or both.
@@ -243,7 +246,17 @@ executable and installs the upstream skill at
 
 **Returns:** the packaged `lavish-axi` derivation. The packaged skill always
 invokes that executable directly rather than through `npx`, so using the skill
-does not download or run a different Lavish release at runtime.
+does not download or run a different Lavish release at runtime. The install phase
+also hardens the skill's poll-feedback guidance: the upstream text tells the
+agent a killed `lavish-axi poll` can always be re-run because "queued feedback is
+never lost", but that holds only while the poll is *waiting* — `poll` empties the
+session's prompts as it hands them over, so a line-dropping filter after it (or a
+kill mid-delivery) destroys the user's annotations. The build rewrites that claim
+and appends a "Poll feedback safety" section (never filter the poll; `tee` to a
+durable per-iteration file; account for every annotation against the `prompts[N]`
+length; ask the user to resend a batch lost in delivery). Each edit is a
+`--replace-fail` plus a tripwire, like the `npx` rewrite and `mkSuperpowersPlugin`,
+so an upstream rewording breaks the build rather than shipping the old advice.
 
 ```nix
 programs.lavish.package = harnessConfig.lib.mkLavishAxi {
